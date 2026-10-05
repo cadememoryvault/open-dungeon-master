@@ -12,6 +12,7 @@ import type {
   CampaignSummary,
 } from "@/lib/campaign-types";
 import { isUploadedImagePath } from "@/lib/uploads";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import type { StorySettings } from "@/lib/types";
 import { normalizeStoryArc, type StoryArc } from "@/lib/dm/arc-logic";
 import { syncArcQuests } from "@/lib/db/quests";
@@ -403,9 +404,17 @@ export function setCampaignCover(campaignId: string, cover: CampaignCover | null
   if (cover && !isUploadedImagePath(cover.url)) {
     return false;
   }
-  const result = getDatabase()
+  const db = getDatabase();
+  const previous = db
+    .prepare(`SELECT cover_json FROM campaigns WHERE id = ?`)
+    .get(campaignId) as { cover_json: string | null } | undefined;
+  const oldUrl = normalizeCampaignCover(parseJson(previous?.cover_json ?? "", null))?.url;
+  const result = db
     .prepare(`UPDATE campaigns SET cover_json = ?, updated_at = ? WHERE id = ?`)
     .run(cover ? JSON.stringify({ id: cover.id, url: cover.url }) : null, nowIso(), campaignId);
+  if (result.changes > 0 && oldUrl && oldUrl !== cover?.url) {
+    removeUnreferencedFiles([oldUrl]);
+  }
   return result.changes > 0;
 }
 
