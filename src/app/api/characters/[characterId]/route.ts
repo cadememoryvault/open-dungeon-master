@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/characters";
 import { listEventsForLibraryCharacter } from "@/lib/db/character-events";
 import { mirrorToCampaignSheets, portraitStatus } from "@/lib/portrait";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import { admitSheet, refusal } from "@/lib/characters/admit";
 import { attachmentSchema, createSheetSchema } from "@/lib/schemas/sheet";
 
@@ -65,6 +66,11 @@ export async function PATCH(
         { status: 400 },
       );
     }
+    const before = getCharacterForUser(user.id, characterId);
+    if (!before) {
+      return Response.json({ error: "Character not found." }, { status: 404 });
+    }
+    const oldPortraitUrl = before.sheet.portrait?.url;
     const character = updateCharacterPortrait(user.id, characterId, parsedPortrait.data.portrait);
     if (!character) {
       return Response.json({ error: "Character not found." }, { status: 404 });
@@ -72,6 +78,9 @@ export async function PATCH(
     // Manual uploads land on every campaign copy so chat and party views
     // show the character's photo, not the account avatar.
     mirrorToCampaignSheets(characterId, parsedPortrait.data.portrait, { overwrite: true });
+    if (oldPortraitUrl && oldPortraitUrl !== parsedPortrait.data.portrait?.url) {
+      removeUnreferencedFiles([oldPortraitUrl]);
+    }
     return Response.json({ character });
   }
   const parsed = updateLibrarySchema.safeParse(raw);
@@ -102,6 +111,10 @@ export async function PATCH(
     return Response.json({ error: "Character not found." }, { status: 404 });
   }
   admitted.settle();
+  const oldPortraitUrl = stored.sheet.portrait?.url;
+  if (oldPortraitUrl && oldPortraitUrl !== character.sheet.portrait?.url) {
+    removeUnreferencedFiles([oldPortraitUrl]);
+  }
   return Response.json({ character });
 }
 
@@ -114,8 +127,16 @@ export async function DELETE(
     return unauthorized();
   }
   const { characterId } = await params;
+  const character = getCharacterForUser(user.id, characterId);
+  if (!character) {
+    return Response.json({ error: "Character not found." }, { status: 404 });
+  }
+  const oldPortraitUrl = character.sheet.portrait?.url;
   if (!deleteCharacter(user.id, characterId)) {
     return Response.json({ error: "Character not found." }, { status: 404 });
+  }
+  if (oldPortraitUrl) {
+    removeUnreferencedFiles([oldPortraitUrl]);
   }
   return Response.json({ ok: true });
 }
