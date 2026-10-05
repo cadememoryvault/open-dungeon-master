@@ -16,6 +16,7 @@ process.env.VOICE_ENABLED = "1";
 process.chdir(dir);
 register("./lib/register-routes.mjs", import.meta.url);
 
+const { getDatabase } = await import("../src/lib/db/core.ts");
 const { createUser } = await import("../src/lib/db/users.ts");
 const { createCampaign, joinByInviteCode } = await import("../src/lib/db/campaigns.ts");
 const { mintSession } = await import("../src/lib/auth.ts");
@@ -95,5 +96,6 @@ globalThis.__odmTestToken = mintSession(player.id).token;
 const after = await requireVoiceMember(campaign.id);
 assert.equal(after instanceof Response, false, "unmuting should restore permission to rejoin");
 
+getDatabase().close();
 removeTempDir(dir);
 console.log("test-voice-mute-gate: 5 tests passed");
