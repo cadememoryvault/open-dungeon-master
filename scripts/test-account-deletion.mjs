@@ -93,8 +93,19 @@ db.prepare(`UPDATE campaigns SET party_lead_user_id = ? WHERE id = ?`).run(bob.i
 
 // Bob's avatar file, and a portrait file shared with a sheet Alice owns.
 fs.writeFileSync(path.join(uploadsDir, "bob-avatar.png"), "png");
+fs.writeFileSync(path.join(uploadsDir, "bob-library.png"), "png");
 fs.writeFileSync(path.join(uploadsDir, "shared.png"), "png");
 setUserAvatar(bob.id, { url: "/uploads/bob-avatar.png" });
+db.prepare(
+  `INSERT INTO library_characters (
+     id, user_id, name, race, class, sheet_json, created_at, updated_at
+   ) VALUES ('lc-bob', ?, 'Bob hero', 'human', 'fighter', ?, ?, ?)`,
+).run(
+  bob.id,
+  JSON.stringify({ portrait: { url: "/uploads/bob-library.png" } }),
+  iso(now),
+  iso(now),
+);
 db.prepare(`UPDATE character_sheets SET portrait_json = ? WHERE user_id = ?`).run(
   JSON.stringify({ url: "/uploads/shared.png" }),
   bob.id,
@@ -172,6 +183,8 @@ test("the transcript keeps its words minus the author, tools pass to the owner",
 
 test("only pictures nothing else points at are removed from disk", () => {
   assert.equal(fs.existsSync(path.join(uploadsDir, "bob-avatar.png")), false);
+  // Library portraits are stored in sheet_json on current rows.
+  assert.equal(fs.existsSync(path.join(uploadsDir, "bob-library.png")), false);
   // Alice's library character still shows the shared portrait.
   assert.equal(fs.existsSync(path.join(uploadsDir, "shared.png")), true);
 });
