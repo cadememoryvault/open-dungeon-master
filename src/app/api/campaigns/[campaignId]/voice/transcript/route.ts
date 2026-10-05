@@ -1,4 +1,4 @@
-import { isErrorResponse, requireMember, steersStory } from "@/lib/campaign-api";
+import { isErrorResponse, requireMember, requireVoice, steersStory } from "@/lib/campaign-api";
 import { getSheetForUser } from "@/lib/db/sheets";
 import { insertTranscriptLines, listTranscriptSince } from "@/lib/db/voice-transcript";
 import { describeInstant } from "@/lib/dm/calendar";
@@ -18,7 +18,7 @@ const MAX_RING_BYTES = 6 * 1024 * 1024;
 
 export async function POST(request: Request, { params }: { params: Promise<{ campaignId: string }> }) {
   const { campaignId } = await params;
-  const context = await requireMember(campaignId);
+  const context = await requireVoice(campaignId);
   if (isErrorResponse(context)) {
     return context;
   }
