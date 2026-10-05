@@ -8,6 +8,7 @@ import { listSheetsForLibraryCharacter, patchSheet } from "@/lib/db/sheets";
 import { setNpcPortrait } from "@/lib/db/npcs";
 import { publishPersisted } from "@/lib/events";
 import { enqueueMediaJob } from "@/lib/media-queue";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import { presetFor } from "@/lib/worlds/preset";
 import type { Genre } from "@/lib/schemas/game-settings";
 import { configuredDefaultStorySettings } from "@/lib/runtime-defaults";
@@ -65,6 +66,10 @@ export function copyIntoUploads(generatedUrl: string): { id: string; url: string
   const uploadsDir = path.join(process.cwd(), "public", "uploads");
   mkdirSync(uploadsDir, { recursive: true });
   copyFileSync(source, path.join(uploadsDir, `${id}.png`));
+  // The generated render is only a staging source for portraits/covers. Once
+  // the durable upload copy exists, drop the source unless some row already
+  // names it for an unusual shared use.
+  removeUnreferencedFiles([generatedUrl]);
   return { id, url: `/uploads/${id}.png` };
 }
 
@@ -136,6 +141,8 @@ export function queueCompanionPortrait(sheet: {
       const updated = patchSheet(sheet.id, { portrait });
       if (updated) {
         publishPersisted(sheet.campaignId, "sheet_updated", { sheet: updated });
+      } else {
+        removeUnreferencedFiles([copied.url]);
       }
       map.delete(sheet.id);
     } catch (error) {
@@ -186,6 +193,8 @@ export function queueNpcPortrait(npc: {
         const copied = copyIntoUploads(image.url);
         if (setNpcPortrait(npc.id, copied.url)) {
           publishPersisted(npc.campaignId, "npc_updated", { npcId: npc.id, portraitUrl: copied.url });
+        } else {
+          removeUnreferencedFiles([copied.url]);
         }
       } catch (error) {
         console.error(`[portrait] npc generation failed for ${npc.id}:`, error);
@@ -222,6 +231,7 @@ export function queueLibraryPortrait(character: LibraryCharacter): void {
           url: copied.url,
         };
         if (!updateCharacterPortrait(character.userId, character.id, portrait)) {
+          removeUnreferencedFiles([copied.url]);
           map.delete(character.id);
           return;
         }
