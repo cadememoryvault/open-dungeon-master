@@ -140,26 +140,35 @@ export function deleteSourceChunks(campaignId: string, source: string): void {
 }
 
 export function setRuleChunkFlags(
+  campaignId: string,
   chunkId: string,
   flags: { enabled?: boolean; pinned?: boolean },
 ): RuleChunk | null {
   const db = getDatabase();
+  // Scope the read and write together. Checking campaign ownership only after
+  // the UPDATE lets a caller who can edit campaign A mutate a known chunk id
+  // from campaign B and receive a 404 only after the damage is done.
   const row = db
-    .prepare(`SELECT ${CHUNK_COLUMNS} FROM rule_chunks WHERE id = ?`)
-    .get(chunkId) as RuleChunkRow | undefined;
+    .prepare(`SELECT ${CHUNK_COLUMNS} FROM rule_chunks WHERE id = ? AND campaign_id = ?`)
+    .get(chunkId, campaignId) as RuleChunkRow | undefined;
   if (!row) {
     return null;
   }
-  db.prepare(`UPDATE rule_chunks SET enabled = ?, pinned = ?, updated_at = ? WHERE id = ?`).run(
+  db.prepare(
+    `UPDATE rule_chunks
+     SET enabled = ?, pinned = ?, updated_at = ?
+     WHERE id = ? AND campaign_id = ?`,
+  ).run(
     flags.enabled === undefined ? row.enabled : flags.enabled ? 1 : 0,
     flags.pinned === undefined ? row.pinned : flags.pinned ? 1 : 0,
     nowIso(),
     chunkId,
+    campaignId,
   );
   const updated = db
-    .prepare(`SELECT ${CHUNK_COLUMNS} FROM rule_chunks WHERE id = ?`)
-    .get(chunkId) as RuleChunkRow;
-  return mapChunk(updated);
+    .prepare(`SELECT ${CHUNK_COLUMNS} FROM rule_chunks WHERE id = ? AND campaign_id = ?`)
+    .get(chunkId, campaignId) as RuleChunkRow | undefined;
+  return updated ? mapChunk(updated) : null;
 }
 
 // Background embedding pass over any chunks still missing a vector.
