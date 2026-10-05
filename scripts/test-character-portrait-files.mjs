@@ -13,7 +13,9 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "odm-character-portrait-files-
 process.env.SQLITE_DB_PATH = path.join(dir, "test.sqlite");
 process.env.DB_ENCRYPTION_KEY = randomBytes(32).toString("hex");
 const uploadsDir = path.join(dir, "public", "uploads");
+const generatedDir = path.join(dir, "public", "generated");
 fs.mkdirSync(uploadsDir, { recursive: true });
+fs.mkdirSync(generatedDir, { recursive: true });
 process.chdir(dir);
 
 register("./lib/register-alias.mjs", import.meta.url);
@@ -23,6 +25,7 @@ const { createUser } = await import("../src/lib/db/users.ts");
 const { createCampaign } = await import("../src/lib/db/campaigns.ts");
 const { createSheet, deleteSheetForUser, patchSheet } = await import("../src/lib/db/sheets.ts");
 const { deleteCharacter, updateCharacterPortrait } = await import("../src/lib/db/characters.ts");
+const { copyIntoUploads } = await import("../src/lib/portrait.ts");
 
 let passed = 0;
 function test(name, fn) {
@@ -90,6 +93,13 @@ function sheetInput(name, url) {
     backstory: "",
   };
 }
+
+test("copying a generated portrait removes its unreferenced staging file", () => {
+  fs.writeFileSync(path.join(generatedDir, "staged.png"), "png");
+  const copied = copyIntoUploads("/generated/staged.png");
+  assert.equal(fs.existsSync(path.join(generatedDir, "staged.png")), false);
+  assert.equal(fs.existsSync(path.join(dir, "public", copied.url)), true);
+});
 
 test("replacing a unique library portrait removes the old file", () => {
   touch("old.png");
