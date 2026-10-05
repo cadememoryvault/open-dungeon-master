@@ -1,7 +1,7 @@
 import { getGlobalConfig } from "@/lib/db/app-settings";
 import { removeCampaignAudio } from "@/lib/campaign-deletion";
 import { deleteCampaign } from "@/lib/db/campaigns";
-import { getDatabase } from "@/lib/db/core";
+import { getDatabase, parseJson } from "@/lib/db/core";
 import {
   clearDeletionRequest,
   deleteSessionsForUser,
@@ -9,7 +9,8 @@ import {
   listUsersDueForPurge,
   markDeletionRequested,
 } from "@/lib/db/users";
-import { campaignFilePaths, filePathsIn, removeUnreferencedFiles } from "@/lib/image-files";
+import { campaignFilePaths, removeUnreferencedFiles } from "@/lib/image-files";
+import { isUploadedImagePath } from "@/lib/uploads";
 
 // Self-service account deletion, in two steps. The request stamps a due
 // date on the user row and signs them out everywhere; the purge (run by the
@@ -79,17 +80,19 @@ export function purgeDueAccounts(now = Date.now()): string[] {
   return purged;
 }
 
-// Every file this account is the reason for: the avatar and portraits on
-// its library characters and campaign sheets. Current library portraits live
-// inside sheet_json; portrait_json is kept in the scan for pre-migration rows.
+type ImageRef = { url?: unknown } | null;
+type LibrarySheetRef = { portrait?: ImageRef } | null;
+
+// Every /uploads/ picture this account is the reason for: the avatar and the
+// portraits on its library characters and campaign sheets. Current library
+// portraits live inside sheet_json; portrait_json is kept for pre-migration
+// rows. Parse that one field rather than treating arbitrary sheet text that
+// happens to mention an upload path as ownership.
 function uploadsOwnedBy(userId: string): string[] {
   const db = getDatabase();
-  const rows = [
+  const directRows = [
     ...(db
       .prepare(`SELECT avatar_json AS json FROM users WHERE id = ?`)
-      .all(userId) as Array<{ json: string | null }>),
-    ...(db
-      .prepare(`SELECT sheet_json AS json FROM library_characters WHERE user_id = ?`)
       .all(userId) as Array<{ json: string | null }>),
     ...(db
       .prepare(`SELECT portrait_json AS json FROM library_characters WHERE user_id = ?`)
@@ -98,9 +101,19 @@ function uploadsOwnedBy(userId: string): string[] {
       .prepare(`SELECT portrait_json AS json FROM character_sheets WHERE user_id = ?`)
       .all(userId) as Array<{ json: string | null }>),
   ];
+  const libraryRows = db
+    .prepare(`SELECT sheet_json AS json FROM library_characters WHERE user_id = ?`)
+    .all(userId) as Array<{ json: string | null }>;
   const urls = new Set<string>();
-  for (const row of rows) {
-    for (const url of filePathsIn(row.json)) {
+  for (const row of directRows) {
+    const url = parseJson<ImageRef>(row.json, null)?.url;
+    if (isUploadedImagePath(url)) {
+      urls.add(url);
+    }
+  }
+  for (const row of libraryRows) {
+    const url = parseJson<LibrarySheetRef>(row.json, null)?.portrait?.url;
+    if (isUploadedImagePath(url)) {
       urls.add(url);
     }
   }
