@@ -546,7 +546,7 @@ export async function PATCH(
   if (parsed.data.portrait !== undefined && sheet.libraryCharacterId && !companionPortrait) {
     updateCharacterPortrait(context.user.id, sheet.libraryCharacterId, parsed.data.portrait);
   }
-  cleanOldPortraits([oldPortraitUrl], updated.portrait?.url);
+  cleanOldPortraits([oldPortraitUrl], updated?.portrait?.url);
   publishPersisted(campaignId, "sheet_updated", { sheet: updated });
 
   return Response.json({ sheet: updated });
