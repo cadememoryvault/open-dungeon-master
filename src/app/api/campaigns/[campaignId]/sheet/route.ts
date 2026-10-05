@@ -94,6 +94,18 @@ function publishReplacement(
   publishPersisted(campaignId, "sheet_updated", { sheet: newSheet });
 }
 
+function cleanOldPortraits(
+  urls: Array<string | null | undefined>,
+  keep?: string | null,
+) {
+  const candidates = urls.filter(
+    (url): url is string => Boolean(url && url !== keep),
+  );
+  if (candidates.length) {
+    removeUnreferencedFiles(candidates);
+  }
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -255,10 +267,12 @@ export async function PUT(
         sheetId: existing.id,
         userId: context.user.id,
       });
+      cleanOldPortraits([existing.portrait?.url]);
       return Response.json({ error: result.error }, { status: 400 });
     }
     queueLibraryPortrait(character);
     publishReplacement(context, existing, result);
+    cleanOldPortraits([existing.portrait?.url], result.portrait?.url);
     return Response.json({ sheet: result });
   }
 
@@ -303,8 +317,10 @@ export async function PUT(
         queueLibraryPortrait({ ...character, sheet: edit.data.sheet });
       }
       publishReplacement(context, existing, sheet);
+      cleanOldPortraits([existing.portrait?.url], sheet.portrait?.url);
       return Response.json({ sheet });
     }
+    const previousLibraryPortraitUrl = character.sheet.portrait?.url;
     const updated = updateCharacter(
       context.user.id,
       character.id,
@@ -326,10 +342,15 @@ export async function PUT(
         sheetId: existing.id,
         userId: context.user.id,
       });
+      cleanOldPortraits([existing.portrait?.url, previousLibraryPortraitUrl]);
       return Response.json({ error: result.error }, { status: 400 });
     }
     queueLibraryPortrait(updated);
     publishReplacement(context, existing, result);
+    cleanOldPortraits(
+      [existing.portrait?.url, previousLibraryPortraitUrl],
+      result.portrait?.url,
+    );
     return Response.json({ sheet: result });
   }
 
@@ -367,6 +388,7 @@ export async function PUT(
   replaced.settle();
   queueLibraryPortrait(libraryCharacter);
   publishReplacement(context, existing, sheet);
+  cleanOldPortraits([existing.portrait?.url], sheet.portrait?.url);
   return Response.json({ sheet });
 }
 
@@ -392,6 +414,7 @@ export async function DELETE(
   setMemberReady(campaignId, context.user.id, false);
   publishPersisted(campaignId, "member_ready", { userId: context.user.id, ready: false });
   publishPersisted(campaignId, "sheet_deleted", { sheetId: removed.id, userId: context.user.id });
+  cleanOldPortraits([removed.portrait?.url]);
   return Response.json({ ok: true });
 }
 
@@ -523,9 +546,7 @@ export async function PATCH(
   if (parsed.data.portrait !== undefined && sheet.libraryCharacterId && !companionPortrait) {
     updateCharacterPortrait(context.user.id, sheet.libraryCharacterId, parsed.data.portrait);
   }
-  if (oldPortraitUrl && oldPortraitUrl !== updated.portrait?.url) {
-    removeUnreferencedFiles([oldPortraitUrl]);
-  }
+  cleanOldPortraits([oldPortraitUrl], updated.portrait?.url);
   publishPersisted(campaignId, "sheet_updated", { sheet: updated });
 
   return Response.json({ sheet: updated });
