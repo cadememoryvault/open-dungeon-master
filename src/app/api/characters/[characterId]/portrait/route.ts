@@ -2,6 +2,7 @@ import { currentUser, unauthorized } from "@/lib/auth";
 import { imagesAvailable } from "@/lib/capabilities";
 import { getCharacterForUser, updateCharacterPortrait } from "@/lib/db/characters";
 import { mirrorToCampaignSheets, queueLibraryPortrait } from "@/lib/portrait";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +22,11 @@ export async function POST(
     return unauthorized();
   }
   const { characterId } = await params;
-  if (!getCharacterForUser(user.id, characterId)) {
+  const character = getCharacterForUser(user.id, characterId);
+  if (!character) {
     return Response.json({ error: "Character not found." }, { status: 404 });
   }
+  const oldPortraitUrl = character.sheet.portrait?.url;
   if (!(await imagesAvailable())) {
     return Response.json(
       { error: "This server has no image model to paint with. Upload a portrait instead." },
@@ -35,6 +38,9 @@ export async function POST(
     return Response.json({ error: "Character not found." }, { status: 404 });
   }
   mirrorToCampaignSheets(characterId, null, { overwrite: true });
+  if (oldPortraitUrl) {
+    removeUnreferencedFiles([oldPortraitUrl]);
+  }
   queueLibraryPortrait(cleared);
   return Response.json({ ok: true }, { status: 202 });
 }
