@@ -19,6 +19,17 @@ import type { McpToolDefinition } from "@/lib/harness/types";
 const MAX_RESULT_CHARS = 60_000;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+// These tools address the account-wide character library and carry no
+// campaign id in their arguments. A campaign-pinned grant cannot safely use
+// them because the pin would have nothing to compare against.
+const CAMPAIGN_PINNED_LIBRARY_TOOLS = new Set([
+  "odm_list_characters",
+  "odm_get_character",
+  "odm_create_character",
+  "odm_update_character",
+  "odm_delete_character",
+]);
+
 type Args = Record<string, unknown>;
 
 type WorkbenchTool = {
@@ -296,7 +307,11 @@ const WHOAMI: McpToolDefinition = {
 export function workbenchTools(grant: ConnectionGrant): McpToolDefinition[] {
   return [
     WHOAMI,
-    ...WORKBENCH_TOOLS.filter((tool) => grant.scopes.includes(tool.scope)).map((tool) => ({
+    ...WORKBENCH_TOOLS.filter(
+      (tool) =>
+        grant.scopes.includes(tool.scope) &&
+        !(grant.campaignId && CAMPAIGN_PINNED_LIBRARY_TOOLS.has(tool.name)),
+    ).map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: {
@@ -332,6 +347,13 @@ export async function workbenchCall(grant: ConnectionGrant, name: string, args: 
   const tool = WORKBENCH_TOOLS.find((entry) => entry.name === name);
   if (!tool || !grant.scopes.includes(tool.scope)) {
     return { text: `Unknown tool ${name} for this connection.`, isError: true };
+  }
+  if (grant.campaignId && CAMPAIGN_PINNED_LIBRARY_TOOLS.has(tool.name)) {
+    return {
+      text: "This connection is limited to one campaign and cannot access the account-wide character library.",
+      isError: true,
+      campaignId: grant.campaignId,
+    };
   }
   const campaignId = typeof args.campaignId === "string" ? args.campaignId : undefined;
   // A connection pinned to one campaign may not reach any other.
