@@ -43,6 +43,19 @@ export async function POST(
   if (!setMemberMuted(campaignId, userId, muted)) {
     return Response.json({ error: "That user is not in this campaign." }, { status: 404 });
   }
+  if (muted) {
+    // A persistent mute applies immediately to an existing call, not only to
+    // the next voice request. Drop either transport's live peer; the voice
+    // gate prevents it from rejoining until the lead unmutes the member.
+    const [{ leaveRoom, publishRoster }, { meshLeave }] = await Promise.all([
+      import("@/lib/voice/peers"),
+      import("@/lib/voice/mesh"),
+    ]);
+    if (leaveRoom(campaignId, userId)) {
+      publishRoster(campaignId);
+    }
+    meshLeave(campaignId, userId);
+  }
   const member = getMember(campaignId, userId);
   publishPersisted(campaignId, "member_updated", { member });
   return Response.json({ member });
