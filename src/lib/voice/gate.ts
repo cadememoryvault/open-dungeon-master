@@ -1,6 +1,6 @@
 import {
   isErrorResponse,
-  requireMember,
+  requireVoice,
   type MemberContext,
 } from "@/lib/campaign-api";
 import { voiceConfig } from "@/lib/voice/config";
@@ -28,7 +28,7 @@ export function voiceAvailability(campaign: { gameSettings: { voice: { enabled: 
 export async function requireVoiceMember(
   campaignId: string,
 ): Promise<MemberContext | Response> {
-  const context = await requireMember(campaignId);
+  const context = await requireVoice(campaignId);
   if (isErrorResponse(context)) {
     return context;
   }
