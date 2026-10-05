@@ -1,4 +1,5 @@
 import { getDatabase, nowIso, parseJson } from "@/lib/db/core";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import type { DiceLook } from "@/lib/dice/dice-look";
 
 export type UserAvatar = {
@@ -124,9 +125,17 @@ export function getUserById(userId: string): User | null {
 }
 
 export function setUserAvatar(userId: string, avatar: UserAvatar | null) {
-  getDatabase()
+  const db = getDatabase();
+  const previous = db
+    .prepare(`SELECT avatar_json FROM users WHERE id = ?`)
+    .get(userId) as { avatar_json: string | null } | undefined;
+  const oldUrl = parseJson<UserAvatar | null>(previous?.avatar_json, null)?.url;
+  const result = db
     .prepare(`UPDATE users SET avatar_json = ? WHERE id = ?`)
     .run(avatar ? JSON.stringify(avatar) : null, userId);
+  if (result.changes > 0 && oldUrl && oldUrl !== avatar?.url) {
+    removeUnreferencedFiles([oldUrl]);
+  }
 }
 
 // Account preferences that follow the person between browsers. Absent keys

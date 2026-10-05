@@ -2,6 +2,7 @@ import { getDatabase, nowIso, parseJson } from "@/lib/db/core";
 import { matchEntity, mergeAliases, normalizeName } from "@/lib/dm/entity-logic";
 import { normalizeNpcVoice, type NpcDraft, type NpcVoice } from "@/lib/npcs/forge";
 import { isUploadedImagePath } from "@/lib/uploads";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import {
   parseBonds,
   parseGoals,
@@ -305,12 +306,18 @@ export function updateNpcFromDraft(campaignId: string, npcId: string, draft: Npc
 // only what /api/upload wrote, and the renderer only ever puts it in a src.
 export function setNpcPortrait(npcId: string, url: string): Npc | null {
   const db = getDatabase();
-  db.prepare(`UPDATE npcs SET portrait_url = ?, updated_at = ? WHERE id = ?`).run(
+  const previous = db.prepare(`SELECT portrait_url FROM npcs WHERE id = ?`).get(npcId) as
+    | { portrait_url: string | null }
+    | undefined;
+  const result = db.prepare(`UPDATE npcs SET portrait_url = ?, updated_at = ? WHERE id = ?`).run(
     url,
     nowIso(),
     npcId,
   );
   const row = db.prepare(`SELECT * FROM npcs WHERE id = ?`).get(npcId) as NpcRow | undefined;
+  if (result.changes > 0 && previous?.portrait_url && previous.portrait_url !== url) {
+    removeUnreferencedFiles([previous.portrait_url]);
+  }
   return row ? mapNpc(row) : null;
 }
 
@@ -329,7 +336,15 @@ export function setNpcAttitude(id: string, attitude: Attitude, turnId: string): 
 }
 
 export function deleteNpc(id: string): boolean {
-  return getDatabase().prepare(`DELETE FROM npcs WHERE id = ?`).run(id).changes > 0;
+  const db = getDatabase();
+  const previous = db.prepare(`SELECT portrait_url FROM npcs WHERE id = ?`).get(id) as
+    | { portrait_url: string | null }
+    | undefined;
+  const result = db.prepare(`DELETE FROM npcs WHERE id = ?`).run(id);
+  if (result.changes > 0 && previous?.portrait_url) {
+    removeUnreferencedFiles([previous.portrait_url]);
+  }
+  return result.changes > 0;
 }
 
 // Writes any subset of the agency state; untouched pieces keep their column.
@@ -438,6 +453,9 @@ export function mergeNpcs(
     db.prepare(`DELETE FROM npcs WHERE id = ?`).run(mergeId);
   });
   apply();
+  if (merge.portraitUrl) {
+    removeUnreferencedFiles([merge.portraitUrl]);
+  }
   return getNpcById(keepId);
 }
 
