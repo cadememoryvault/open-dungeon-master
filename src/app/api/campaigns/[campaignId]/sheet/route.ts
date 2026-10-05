@@ -24,6 +24,7 @@ import {
   patchSheet,
 } from "@/lib/db/sheets";
 import { queueLibraryPortrait } from "@/lib/portrait";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import { createSheetSchema, patchSheetSchema } from "@/lib/schemas/sheet";
 import {
   classGrantsFor,
@@ -505,6 +506,8 @@ export async function PATCH(
     });
   }
 
+  const oldPortraitUrl =
+    parsed.data.portrait !== undefined ? sheet.portrait?.url : undefined;
   const cosmetic = {
     ...(parsed.data.portrait !== undefined ? { portrait: parsed.data.portrait } : {}),
     ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
@@ -519,6 +522,9 @@ export async function PATCH(
   // wrong owner.
   if (parsed.data.portrait !== undefined && sheet.libraryCharacterId && !companionPortrait) {
     updateCharacterPortrait(context.user.id, sheet.libraryCharacterId, parsed.data.portrait);
+  }
+  if (oldPortraitUrl && oldPortraitUrl !== updated.portrait?.url) {
+    removeUnreferencedFiles([oldPortraitUrl]);
   }
   publishPersisted(campaignId, "sheet_updated", { sheet: updated });
 
