@@ -15,16 +15,10 @@ process.env.DB_ENCRYPTION_KEY = randomBytes(32).toString("hex");
 process.chdir(dir);
 register("./lib/register-alias.mjs", import.meta.url);
 
-// setHouseRules embeds in the background; keep this regression independent
-// of any local embedding model, as the existing route tests do.
-globalThis.__odmEmbedderPromise = Promise.resolve((texts) =>
-  Promise.resolve({ tolist: () => texts.map(() => new Array(384).fill(0.1)) }),
-);
-
 const { getDatabase } = await import("../src/lib/db/core.ts");
 const { createUser } = await import("../src/lib/db/users.ts");
 const { createCampaign } = await import("../src/lib/db/campaigns.ts");
-const { listRuleChunks, setHouseRules, setRuleChunkFlags } = await import("../src/lib/db/rules.ts");
+const { listRuleChunks, setRuleChunkFlags } = await import("../src/lib/db/rules.ts");
 
 const db = getDatabase();
 const owner = createUser("owner", "hash");
@@ -39,8 +33,14 @@ const table = (title) => ({
 const first = createCampaign(owner.id, table("First"));
 const second = createCampaign(owner.id, table("Second"));
 
-setHouseRules(first.id, "# First rule\nPotions are a bonus action.");
-setHouseRules(second.id, "# Second rule\nCritical hits use maximum damage.");
+const now = new Date().toISOString();
+const insert = db.prepare(
+  `INSERT INTO rule_chunks
+     (id, campaign_id, chunk_index, heading, text, enabled, pinned, created_at, updated_at)
+   VALUES (?, ?, 0, ?, ?, 1, 0, ?, ?)`,
+);
+insert.run("first-chunk", first.id, "First rule", "Potions are a bonus action.", now, now);
+insert.run("second-chunk", second.id, "Second rule", "Critical hits use maximum damage.", now, now);
 
 const firstChunk = listRuleChunks(first.id)[0];
 const secondChunk = listRuleChunks(second.id)[0];
