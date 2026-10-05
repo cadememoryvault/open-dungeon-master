@@ -15,6 +15,12 @@ process.env.DB_ENCRYPTION_KEY = randomBytes(32).toString("hex");
 process.chdir(dir);
 register("./lib/register-alias.mjs", import.meta.url);
 
+// setHouseRules embeds in the background; keep this regression independent
+// of any local embedding model, as the existing route tests do.
+globalThis.__odmEmbedderPromise = Promise.resolve((texts) =>
+  Promise.resolve({ tolist: () => texts.map(() => new Array(384).fill(0.1)) }),
+);
+
 const { getDatabase } = await import("../src/lib/db/core.ts");
 const { createUser } = await import("../src/lib/db/users.ts");
 const { createCampaign } = await import("../src/lib/db/campaigns.ts");
