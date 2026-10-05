@@ -1,7 +1,7 @@
 import { getGlobalConfig } from "@/lib/db/app-settings";
 import { removeCampaignAudio } from "@/lib/campaign-deletion";
 import { deleteCampaign } from "@/lib/db/campaigns";
-import { getDatabase, parseJson } from "@/lib/db/core";
+import { getDatabase } from "@/lib/db/core";
 import {
   clearDeletionRequest,
   deleteSessionsForUser,
@@ -9,8 +9,7 @@ import {
   listUsersDueForPurge,
   markDeletionRequested,
 } from "@/lib/db/users";
-import { campaignFilePaths, removeUnreferencedFiles } from "@/lib/image-files";
-import { isUploadedImagePath } from "@/lib/uploads";
+import { campaignFilePaths, filePathsIn, removeUnreferencedFiles } from "@/lib/image-files";
 
 // Self-service account deletion, in two steps. The request stamps a due
 // date on the user row and signs them out everywhere; the purge (run by the
@@ -80,15 +79,17 @@ export function purgeDueAccounts(now = Date.now()): string[] {
   return purged;
 }
 
-type ImageRef = { url?: unknown } | null;
-
-// Every /uploads/ picture this account is the reason for: the avatar and the
-// portraits on its library characters and campaign sheets.
+// Every file this account is the reason for: the avatar and portraits on
+// its library characters and campaign sheets. Current library portraits live
+// inside sheet_json; portrait_json is kept in the scan for pre-migration rows.
 function uploadsOwnedBy(userId: string): string[] {
   const db = getDatabase();
   const rows = [
     ...(db
       .prepare(`SELECT avatar_json AS json FROM users WHERE id = ?`)
+      .all(userId) as Array<{ json: string | null }>),
+    ...(db
+      .prepare(`SELECT sheet_json AS json FROM library_characters WHERE user_id = ?`)
       .all(userId) as Array<{ json: string | null }>),
     ...(db
       .prepare(`SELECT portrait_json AS json FROM library_characters WHERE user_id = ?`)
@@ -99,8 +100,7 @@ function uploadsOwnedBy(userId: string): string[] {
   ];
   const urls = new Set<string>();
   for (const row of rows) {
-    const url = parseJson<ImageRef>(row.json, null)?.url;
-    if (isUploadedImagePath(url)) {
+    for (const url of filePathsIn(row.json)) {
       urls.add(url);
     }
   }
