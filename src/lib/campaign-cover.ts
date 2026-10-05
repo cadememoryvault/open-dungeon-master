@@ -3,6 +3,7 @@ import type { Campaign } from "@/lib/db/campaigns";
 import { setCampaignCover } from "@/lib/db/campaigns";
 import { publishPersisted } from "@/lib/events";
 import { enqueueMediaJob } from "@/lib/media-queue";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import { copyIntoUploads, whenImagesAvailable } from "@/lib/portrait";
 import { presetFor } from "@/lib/worlds/preset";
 import { configuredDefaultStorySettings } from "@/lib/runtime-defaults";
@@ -84,6 +85,8 @@ export function queueCampaignCover(
         const cover = copyIntoUploads(image.url);
         if (setCampaignCover(campaign.id, cover)) {
           publishPersisted(campaign.id, "campaign_updated", { cover });
+        } else {
+          removeUnreferencedFiles([cover.url]);
         }
         map.delete(campaign.id);
       } catch (error) {

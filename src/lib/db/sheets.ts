@@ -10,6 +10,7 @@ import { settleAttunement, type Wearer } from "@/lib/srd/magic-items";
 import { itemWeightByName } from "@/lib/content";
 import { hydrateHomebrewGear } from "@/lib/db/homebrew";
 import { backgroundFeatureFor } from "@/lib/backgrounds";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import type {
   CharacterSheet,
   CreateSheetInput,
@@ -75,6 +76,16 @@ const EMPTY_PROFICIENCIES = {
   armor: [],
   weapons: [],
 };
+
+function removeReplacedPortrait(
+  before: CharacterSheet["portrait"],
+  after: CharacterSheet["portrait"],
+) {
+  const oldUrl = before?.url;
+  if (oldUrl && oldUrl !== after?.url) {
+    removeUnreferencedFiles([oldUrl]);
+  }
+}
 
 function mapSheet(row: SheetRow): CharacterSheet {
   // Sheets created before the `known` spell list existed lack the field.
@@ -416,6 +427,7 @@ export function deleteSheetForUser(campaignId: string, userId: string): Characte
   }
   getDatabase().prepare(`DELETE FROM character_sheets WHERE id = ?`).run(existing.id);
   touchCampaign(campaignId);
+  removeReplacedPortrait(existing.portrait, null);
   return existing;
 }
 
@@ -761,5 +773,9 @@ export function patchSheet(sheetId: string, patch: FullPatchSheetInput): Charact
     );
   touchCampaign(existing.campaignId);
 
-  return getSheetById(sheetId);
+  const updated = getSheetById(sheetId);
+  if (patch.portrait !== undefined) {
+    removeReplacedPortrait(existing.portrait, updated?.portrait ?? null);
+  }
+  return updated;
 }

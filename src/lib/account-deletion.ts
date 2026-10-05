@@ -81,12 +81,16 @@ export function purgeDueAccounts(now = Date.now()): string[] {
 }
 
 type ImageRef = { url?: unknown } | null;
+type LibrarySheetRef = { portrait?: ImageRef } | null;
 
 // Every /uploads/ picture this account is the reason for: the avatar and the
-// portraits on its library characters and campaign sheets.
+// portraits on its library characters and campaign sheets. Current library
+// portraits live inside sheet_json; portrait_json is kept for pre-migration
+// rows. Parse that one field rather than treating arbitrary sheet text that
+// happens to mention an upload path as ownership.
 function uploadsOwnedBy(userId: string): string[] {
   const db = getDatabase();
-  const rows = [
+  const directRows = [
     ...(db
       .prepare(`SELECT avatar_json AS json FROM users WHERE id = ?`)
       .all(userId) as Array<{ json: string | null }>),
@@ -97,9 +101,18 @@ function uploadsOwnedBy(userId: string): string[] {
       .prepare(`SELECT portrait_json AS json FROM character_sheets WHERE user_id = ?`)
       .all(userId) as Array<{ json: string | null }>),
   ];
+  const libraryRows = db
+    .prepare(`SELECT sheet_json AS json FROM library_characters WHERE user_id = ?`)
+    .all(userId) as Array<{ json: string | null }>;
   const urls = new Set<string>();
-  for (const row of rows) {
+  for (const row of directRows) {
     const url = parseJson<ImageRef>(row.json, null)?.url;
+    if (isUploadedImagePath(url)) {
+      urls.add(url);
+    }
+  }
+  for (const row of libraryRows) {
+    const url = parseJson<LibrarySheetRef>(row.json, null)?.portrait?.url;
     if (isUploadedImagePath(url)) {
       urls.add(url);
     }
