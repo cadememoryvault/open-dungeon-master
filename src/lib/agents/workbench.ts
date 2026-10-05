@@ -348,13 +348,6 @@ export async function workbenchCall(grant: ConnectionGrant, name: string, args: 
   if (!tool || !grant.scopes.includes(tool.scope)) {
     return { text: `Unknown tool ${name} for this connection.`, isError: true };
   }
-  if (grant.campaignId && CAMPAIGN_PINNED_LIBRARY_TOOLS.has(tool.name)) {
-    return {
-      text: "This connection is limited to one campaign and cannot access the account-wide character library.",
-      isError: true,
-      campaignId: grant.campaignId,
-    };
-  }
   const campaignId = typeof args.campaignId === "string" ? args.campaignId : undefined;
   // A connection pinned to one campaign may not reach any other.
   if (grant.campaignId && campaignId && campaignId !== grant.campaignId) {
@@ -372,6 +365,13 @@ export async function workbenchCall(grant: ConnectionGrant, name: string, args: 
     path = tool.path(args);
   } catch (error) {
     return { text: error instanceof Error ? error.message : "Bad arguments.", isError: true, campaignId };
+  }
+  if (grant.campaignId && CAMPAIGN_PINNED_LIBRARY_TOOLS.has(tool.name)) {
+    return {
+      text: "This connection is limited to one campaign and cannot access the account-wide character library.",
+      isError: true,
+      campaignId: grant.campaignId,
+    };
   }
   const body = tool.body?.(args);
   let response: Response;
