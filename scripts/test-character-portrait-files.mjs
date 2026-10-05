@@ -20,6 +20,8 @@ register("./lib/register-alias.mjs", import.meta.url);
 
 const { getDatabase } = await import("../src/lib/db/core.ts");
 const { createUser } = await import("../src/lib/db/users.ts");
+const { createCampaign } = await import("../src/lib/db/campaigns.ts");
+const { createSheet, deleteSheetForUser, patchSheet } = await import("../src/lib/db/sheets.ts");
 const { deleteCharacter, updateCharacterPortrait } = await import("../src/lib/db/characters.ts");
 
 let passed = 0;
@@ -49,6 +51,46 @@ function touch(name) {
   fs.writeFileSync(path.join(uploadsDir, name), "png");
 }
 
+function sheetInput(name, url) {
+  return {
+    name,
+    race: "human",
+    class: "fighter",
+    subclass: "",
+    background: "",
+    alignment: "",
+    gender: "",
+    appearance: "",
+    abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    maxHp: 10,
+    ac: 10,
+    acOverride: true,
+    speed: 30,
+    hitDice: { die: "d10", total: 1, spent: 0 },
+    classes: [],
+    hitDicePools: null,
+    proficiencies: {
+      saves: [],
+      skills: [],
+      expertise: [],
+      languages: ["Common"],
+      tools: [],
+      armor: [],
+      weapons: [],
+    },
+    equipment: [],
+    gold: 0,
+    copper: 0,
+    feats: [],
+    features: [],
+    asiChoices: [],
+    spellcasting: null,
+    portrait: url ? portrait(url) : null,
+    notes: "",
+    backstory: "",
+  };
+}
+
 test("replacing a unique library portrait removes the old file", () => {
   touch("old.png");
   touch("new.png");
@@ -76,6 +118,43 @@ test("deleting a character removes its otherwise-unreferenced portrait", () => {
   addCharacter("delete", "/uploads/delete-me.png");
   assert.equal(deleteCharacter(user.id, "delete"), true);
   assert.equal(fs.existsSync(path.join(uploadsDir, "delete-me.png")), false);
+});
+
+const campaign = createCampaign(user.id, {
+  title: "Portrait cleanup",
+  description: "",
+  theme: "",
+  maxPlayers: 4,
+  startingLevel: 1,
+  difficulty: "normal",
+});
+
+test("replacing a campaign-sheet portrait removes the old file", () => {
+  touch("sheet-old.png");
+  touch("sheet-new.png");
+  const sheet = createSheet(
+    campaign.id,
+    user.id,
+    1,
+    sheetInput("Sheet replace", "/uploads/sheet-old.png"),
+  );
+  const updated = patchSheet(sheet.id, { portrait: portrait("/uploads/sheet-new.png") });
+  assert.equal(updated?.portrait?.url, "/uploads/sheet-new.png");
+  assert.equal(fs.existsSync(path.join(uploadsDir, "sheet-old.png")), false);
+  assert.equal(fs.existsSync(path.join(uploadsDir, "sheet-new.png")), true);
+  deleteSheetForUser(campaign.id, user.id);
+});
+
+test("deleting a campaign sheet removes its otherwise-unreferenced portrait", () => {
+  touch("sheet-delete.png");
+  createSheet(
+    campaign.id,
+    user.id,
+    1,
+    sheetInput("Sheet delete", "/uploads/sheet-delete.png"),
+  );
+  assert.ok(deleteSheetForUser(campaign.id, user.id));
+  assert.equal(fs.existsSync(path.join(uploadsDir, "sheet-delete.png")), false);
 });
 
 console.log(`\n${passed} character portrait file checks passed.`);
