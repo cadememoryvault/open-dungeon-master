@@ -8,6 +8,7 @@ import { populateFeaturesForClasses } from "@/lib/srd/features";
 import { normalizeSpellcasting } from "@/lib/srd/spell-lists";
 import { dedupeName } from "@/lib/workshop/import";
 import { normalizeCampaignKind, type CampaignKind } from "@/lib/workshop/kind";
+import { removeUnreferencedFiles } from "@/lib/image-files";
 import type { CampaignStatus } from "@/lib/campaign-types";
 import type { CharacterSheet, CreateSheetInput, SheetAttachment } from "@/lib/schemas/sheet";
 
@@ -91,6 +92,16 @@ function mapCharacter(row: LibraryRow): LibraryCharacter {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function removeReplacedPortrait(
+  before: SheetAttachment | null | undefined,
+  after: SheetAttachment | null | undefined,
+) {
+  const oldUrl = before?.url;
+  if (oldUrl && oldUrl !== after?.url) {
+    removeUnreferencedFiles([oldUrl]);
+  }
 }
 
 // SRD class features and racial traits for a stored sheet, granted per class
@@ -241,7 +252,9 @@ export function updateCharacter(
       nowIso(),
       id,
     );
-  return getCharacter(id);
+  const updated = getCharacter(id);
+  removeReplacedPortrait(existing.sheet.portrait, updated?.sheet.portrait);
+  return updated;
 }
 
 // Portrait-only update from the library page; the rest of the sheet stays
@@ -259,13 +272,22 @@ export function updateCharacterPortrait(
   getDatabase()
     .prepare(`UPDATE library_characters SET sheet_json = ?, updated_at = ? WHERE id = ?`)
     .run(JSON.stringify(stored), nowIso(), id);
-  return getCharacter(id);
+  const updated = getCharacter(id);
+  removeReplacedPortrait(character.sheet.portrait, updated?.sheet.portrait);
+  return updated;
 }
 
 export function deleteCharacter(userId: string, id: string): boolean {
+  const character = getCharacterForUser(userId, id);
+  if (!character) {
+    return false;
+  }
   const result = getDatabase()
     .prepare(`DELETE FROM library_characters WHERE id = ? AND user_id = ?`)
     .run(id, userId);
+  if (result.changes > 0) {
+    removeReplacedPortrait(character.sheet.portrait, null);
+  }
   return result.changes > 0;
 }
 
@@ -356,7 +378,9 @@ export function syncProgressToLibrary(sheetId: string): LibraryCharacter | null 
     getDatabase()
       .prepare(`UPDATE library_characters SET sheet_json = ?, updated_at = ? WHERE id = ?`)
       .run(JSON.stringify(kept), nowIso(), character.id);
-    return getCharacter(character.id);
+    const updated = getCharacter(character.id);
+    removeReplacedPortrait(character.sheet.portrait, updated?.sheet.portrait);
+    return updated;
   }
   const merged: CreateSheetInput = {
     ...character.sheet,
@@ -410,7 +434,9 @@ export function syncProgressToLibrary(sheetId: string): LibraryCharacter | null 
       nowIso(),
       character.id,
     );
-  return getCharacter(character.id);
+  const updated = getCharacter(character.id);
+  removeReplacedPortrait(character.sheet.portrait, updated?.sheet.portrait);
+  return updated;
 }
 
 // ---- where a character is playing ----
