@@ -18,11 +18,14 @@ register("./lib/register-routes.mjs", import.meta.url);
 
 const { createUser } = await import("../src/lib/db/users.ts");
 const { createCampaign, joinByInviteCode } = await import("../src/lib/db/campaigns.ts");
-const { setMemberMuted } = await import("../src/lib/db/moderation.ts");
 const { mintSession } = await import("../src/lib/auth.ts");
 const { requireVoiceMember } = await import("../src/lib/voice/gate.ts");
+const { meshJoin, meshJoined } = await import("../src/lib/voice/mesh.ts");
 const transcriptRoute = await import(
   new URL("../src/app/api/campaigns/[campaignId]/voice/transcript/route.ts", import.meta.url).href
+);
+const muteRoute = await import(
+  new URL("../src/app/api/campaigns/[campaignId]/mute/route.ts", import.meta.url).href
 );
 
 const lead = createUser("lead", "hash");
@@ -42,8 +45,22 @@ globalThis.__odmTestToken = mintSession(player.id).token;
 const before = await requireVoiceMember(campaign.id);
 assert.equal(before instanceof Response, false, "an unmuted member should pass the voice gate");
 
-assert.equal(setMemberMuted(campaign.id, player.id, true), true);
+meshJoin(campaign.id, player.id, player.username);
+assert.equal(meshJoined(campaign.id, player.id), true);
 
+globalThis.__odmTestToken = mintSession(lead.id).token;
+const muted = await muteRoute.POST(
+  new Request("http://test/mute", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ userId: player.id, muted: true }),
+  }),
+  { params: Promise.resolve({ campaignId: campaign.id }) },
+);
+assert.equal(muted.status, 200);
+assert.equal(meshJoined(campaign.id, player.id), false, "a live muted peer remained on the call");
+
+globalThis.__odmTestToken = mintSession(player.id).token;
 const gated = await requireVoiceMember(campaign.id);
 assert.equal(gated instanceof Response, true);
 assert.equal(gated.status, 403);
@@ -63,5 +80,20 @@ const read = await transcriptRoute.GET(
 assert.equal(read.status, 200, "mute should not remove read access");
 assert.deepEqual((await read.json()).lines, []);
 
+globalThis.__odmTestToken = mintSession(lead.id).token;
+const unmuted = await muteRoute.POST(
+  new Request("http://test/mute", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ userId: player.id, muted: false }),
+  }),
+  { params: Promise.resolve({ campaignId: campaign.id }) },
+);
+assert.equal(unmuted.status, 200);
+
+globalThis.__odmTestToken = mintSession(player.id).token;
+const after = await requireVoiceMember(campaign.id);
+assert.equal(after instanceof Response, false, "unmuting should restore permission to rejoin");
+
 removeTempDir(dir);
-console.log("test-voice-mute-gate: 3 tests passed");
+console.log("test-voice-mute-gate: 5 tests passed");
